@@ -96,4 +96,25 @@ public class MainViewModelTests
         Assert.Equal(0.8f, volume.VolumeLevel);
         Assert.Equal(0.8f, vm.Volume);
     }
+
+    [Fact]
+    public void ResetsProperties_WhenSessionDisappears()
+    {
+        var watcher = new FakeMediaSessionWatcher();
+        var vm = new MainViewModel(watcher, new FakeVolumeController());
+
+        watcher.Current = PlayingSession();
+        watcher.RaiseChanged();
+        Assert.False(vm.IsIdle);
+        Assert.Equal("Song", vm.Title);
+
+        watcher.Current = null;
+        watcher.RaiseChanged();
+
+        Assert.True(vm.IsIdle);
+        Assert.Equal(string.Empty, vm.Title);
+        Assert.Equal(string.Empty, vm.Artist);
+        Assert.False(vm.IsPlaying);
+        Assert.False(vm.CanTogglePlayPause);
+    }
 }

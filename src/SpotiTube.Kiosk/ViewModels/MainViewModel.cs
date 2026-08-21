@@ -54,6 +54,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Duration = current.Duration;
             Volume = _volume.GetVolume(current.SourceAppId);
         }
+        else
+        {
+            Title = string.Empty;
+            Artist = string.Empty;
+            AlbumArt = null;
+            IsPlaying = false;
+            CanPlay = false;
+            CanPause = false;
+            CanSkipNext = false;
+            CanSkipPrevious = false;
+            CanSeek = false;
+            Position = TimeSpan.Zero;
+            Duration = TimeSpan.Zero;
+            Volume = 0f;
+        }
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
