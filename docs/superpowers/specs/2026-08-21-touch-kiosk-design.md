@@ -2,6 +2,17 @@
 
 Date: 2026-08-21
 
+## Errata
+
+- **Current-session selection** (see "MediaSessionWatcher" under Components): the
+  original text said to prefer whichever session reports `Playing`, "otherwise no
+  current session." The final whole-branch review caught that this makes pausing
+  a one-way door — a paused session could never be resumed from the touchscreen,
+  since it would never become "current" again. Corrected: fall back to the most
+  recently updated non-closed session when nothing is playing; only "no sessions"
+  or "every session closed" falls through to idle. See the implementation plan's
+  Task 2 for the corrected logic.
+
 ## Problem
 
 The user has a HAMTYSAN 10.1" 1024x600 HDMI+USB touchscreen monitor connected

@@ -315,11 +315,23 @@ public static class CurrentSessionSelector
     public static MediaSessionState? SelectCurrent(IReadOnlyList<MediaSessionState> sessions)
     {
         var playing = sessions.Where(s => s.Status == PlaybackStatus.Playing).ToList();
-        if (playing.Count == 0) return null;
-        return playing.OrderByDescending(s => s.LastUpdated).First();
+        if (playing.Count > 0)
+        {
+            return playing.OrderByDescending(s => s.LastUpdated).First();
+        }
+
+        var resumable = sessions.Where(s => s.Status != PlaybackStatus.Closed).ToList();
+        if (resumable.Count > 0)
+        {
+            return resumable.OrderByDescending(s => s.LastUpdated).First();
+        }
+
+        return null;
     }
 }
 ```
+
+> **Post-implementation ruling (final whole-branch review):** the original version of this method returned `null` whenever no session was `Playing` — including when a session was merely `Paused`. That made pausing a one-way door: the Now Playing view would collapse to the idle clock and the Play/Pause button would disappear with it, so a paused session could never be resumed from the touchscreen. Fixed by falling back to the most-recently-updated non-`Closed` session (so a paused session still becomes "current" and its `CanPlay`/`CanTogglePlayPause` flags correctly enable the Play button) — only "no sessions at all" or "every session Closed" now falls through to idle. `NoPlayingSessions_ReturnsNull_EvenIfPaused` in Task 2's test list is renamed/replaced accordingly — see the fix below.
 
 - [ ] **Step 4: Run test to verify it passes**
 
