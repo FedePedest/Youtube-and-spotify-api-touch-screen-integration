@@ -1,1 +1,4 @@
-<Solution />
+<Solution>
+  <Project Path="src/SpotiTube.Kiosk/SpotiTube.Kiosk.csproj" />
+  <Project Path="tests/SpotiTube.Kiosk.Tests/SpotiTube.Kiosk.Tests.csproj" />
+</Solution>
