@@ -29,11 +29,50 @@ public class CurrentSessionSelectorTests
     }
 
     [Fact]
-    public void NoPlayingSessions_ReturnsNull_EvenIfPaused()
+    public void NoPlayingSessions_ReturnsMostRecentlyUpdatedPausedSession()
+    {
+        // A paused session must stay "current" so its Play button remains reachable on the
+        // touchscreen - otherwise pausing would be a one-way door.
+        var older = Session("Spotify.exe", PlaybackStatus.Paused, DateTimeOffset.UtcNow.AddSeconds(-10));
+        var newer = Session("msedge.exe", PlaybackStatus.Paused, DateTimeOffset.UtcNow);
+        var result = CurrentSessionSelector.SelectCurrent(new[] { older, newer });
+        Assert.Equal("msedge.exe", result!.SourceAppId);
+    }
+
+    [Fact]
+    public void LonePausedSession_IsReturned()
     {
         var sessions = new[] { Session("Spotify.exe", PlaybackStatus.Paused, DateTimeOffset.UtcNow) };
         var result = CurrentSessionSelector.SelectCurrent(sessions);
-        Assert.Null(result);
+        Assert.Equal("Spotify.exe", result!.SourceAppId);
+    }
+
+    [Fact]
+    public void AllSessionsClosed_ReturnsNull()
+    {
+        var sessions = new[]
+        {
+            Session("Spotify.exe", PlaybackStatus.Closed, DateTimeOffset.UtcNow.AddSeconds(-10)),
+            Session("msedge.exe", PlaybackStatus.Closed, DateTimeOffset.UtcNow),
+        };
+        Assert.Null(CurrentSessionSelector.SelectCurrent(sessions));
+    }
+
+    [Fact]
+    public void ClosedSessionIsSkipped_InFavorOfNonClosedOne()
+    {
+        var closedButNewer = Session("msedge.exe", PlaybackStatus.Closed, DateTimeOffset.UtcNow);
+        var pausedButOlder = Session("Spotify.exe", PlaybackStatus.Paused, DateTimeOffset.UtcNow.AddSeconds(-10));
+        var result = CurrentSessionSelector.SelectCurrent(new[] { closedButNewer, pausedButOlder });
+        Assert.Equal("Spotify.exe", result!.SourceAppId);
+    }
+
+    [Fact]
+    public void StoppedSession_IsReturned_WhenNothingIsPlaying()
+    {
+        var sessions = new[] { Session("Spotify.exe", PlaybackStatus.Stopped, DateTimeOffset.UtcNow) };
+        var result = CurrentSessionSelector.SelectCurrent(sessions);
+        Assert.Equal("Spotify.exe", result!.SourceAppId);
     }
 
     [Fact]
