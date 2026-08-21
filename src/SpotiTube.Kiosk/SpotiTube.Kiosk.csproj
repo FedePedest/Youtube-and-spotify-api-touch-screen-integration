@@ -12,7 +12,6 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
-    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
 
 </Project>
