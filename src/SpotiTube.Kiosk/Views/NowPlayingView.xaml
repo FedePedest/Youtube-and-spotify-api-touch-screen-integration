@@ -1,12 +1,29 @@
 <UserControl x:Class="SpotiTube.Kiosk.Views.NowPlayingView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:SpotiTube.Kiosk.Views.Converters">
+    <UserControl.Resources>
+        <converters:ByteArrayToImageSourceConverter x:Key="AlbumArtConverter" />
+    </UserControl.Resources>
     <Grid Background="#FF101010">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+
+        <!-- Blurred album art background layer. Source is unset when the session has no artwork,
+             in which case nothing renders here and the Grid's flat background shows through. -->
+        <Image Grid.Row="0"
+               Grid.RowSpan="3"
+               Source="{Binding AlbumArt, Converter={StaticResource AlbumArtConverter}}"
+               Stretch="UniformToFill"
+               Opacity="0.5"
+               IsHitTestVisible="False">
+            <Image.Effect>
+                <BlurEffect Radius="20" />
+            </Image.Effect>
+        </Image>
 
         <StackPanel Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center">
             <TextBlock Text="{Binding Title}" Foreground="White" FontSize="32" HorizontalAlignment="Center" />
