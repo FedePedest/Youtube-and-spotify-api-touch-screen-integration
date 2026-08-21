@@ -115,11 +115,12 @@ Replace the contents of `src/SpotiTube.Kiosk/SpotiTube.Kiosk.csproj` with:
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
-    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
 
 </Project>
 ```
+
+Do not add a `Microsoft.CSharp` reference here — nothing in this task uses `dynamic`/COM interop, and an unused reference to a framework assembly already supplied implicitly (via `UseWindowsForms`/`UseWPF`) produces MSB3245/MSB3243 warnings on every build with no offsetting benefit. Task 10 adds it at the point `dynamic` is actually introduced.
 
 - [ ] **Step 3: Scaffold the test project**
 
@@ -1788,9 +1789,21 @@ git commit -m "Add monitor presence evaluation and reconnect handling"
 **Files:**
 - Create: `src/SpotiTube.Kiosk/Startup/AutostartInstaller.cs`
 - Test: `tests/SpotiTube.Kiosk.Tests/AutostartInstallerTests.cs`
+- Modify: `src/SpotiTube.Kiosk/SpotiTube.Kiosk.csproj`
 
 **Interfaces:**
 - Produces: `AutostartInstaller.GetShortcutPath(string startupFolder, string appName) : string`, `AutostartInstaller.Install(string startupFolder, string appName, string targetExePath) : void`, `AutostartInstaller.IsInstalled(string startupFolder, string appName) : bool`. Consumed by Task 11.
+
+- [ ] **Step 0: Add the Microsoft.CSharp reference**
+
+`AutostartInstaller` uses `dynamic` for COM interop (Step 3 below), which needs the `Microsoft.CSharp` assembly. Add it to `src/SpotiTube.Kiosk/SpotiTube.Kiosk.csproj`'s existing `<ItemGroup>` containing the `NAudio` `PackageReference`:
+
+```xml
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+```
 
 - [ ] **Step 1: Write the failing test**
 
