@@ -33,6 +33,38 @@ public class AudioSessionMatcherTests
     }
 
     [Fact]
+    public void BareEdgeAumid_MatchesMsedgeProcess()
+    {
+        // Edge reports its SMTC source app id as a bare "MSEdge" - no ".exe", no "!" separator.
+        var sessions = new[]
+        {
+            new AudioSessionInfo(100, "Spotify.exe"),
+            new AudioSessionInfo(200, "msedge.exe"),
+        };
+        var result = AudioSessionMatcher.FindMatch(sessions, "MSEdge");
+        Assert.Equal(200, result!.ProcessId);
+    }
+
+    [Fact]
+    public void BareChromeAumid_MatchesChromeProcess()
+    {
+        var sessions = new[]
+        {
+            new AudioSessionInfo(100, "Spotify.exe"),
+            new AudioSessionInfo(300, "chrome.exe"),
+        };
+        var result = AudioSessionMatcher.FindMatch(sessions, "Chrome");
+        Assert.Equal(300, result!.ProcessId);
+    }
+
+    [Fact]
+    public void ExeSuffixIsOptionalOnEitherSide()
+    {
+        var sessions = new[] { new AudioSessionInfo(100, "Spotify.exe") };
+        Assert.Equal(100, AudioSessionMatcher.FindMatch(sessions, "Spotify")!.ProcessId);
+    }
+
+    [Fact]
     public void NoMatch_ReturnsNull()
     {
         var sessions = new[] { new AudioSessionInfo(100, "Spotify.exe") };
