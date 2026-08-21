@@ -925,7 +925,7 @@ git commit -m "Add touch monitor location logic"
 
 **Interfaces:**
 - Consumes: `IMediaSessionWatcher`, `IVolumeController` (Tasks 3 & 4), `MediaSessionState`/`PlaybackStatus` (Task 2).
-- Produces: `MainViewModel` with bindable properties `IsIdle`, `Title`, `Artist`, `AlbumArt`, `IsPlaying`, `CanSkipNext`, `CanSkipPrevious`, `CanSeek`, `Position`, `Duration`, `Volume`, and methods `TogglePlayPauseAsync()`, `SkipNextAsync()`, `SkipPreviousAsync()`, `SeekAsync(TimeSpan)`, `SetVolume(float)`. Consumed by Task 7 (XAML bindings) and Task 11 (composition root).
+- Produces: `MainViewModel` with bindable properties `IsIdle`, `Title`, `Artist`, `AlbumArt`, `IsPlaying`, `CanPlay`, `CanPause`, `CanTogglePlayPause`, `CanSkipNext`, `CanSkipPrevious`, `CanSeek`, `Position`, `Duration`, `Volume`, and methods `TogglePlayPauseAsync()`, `SkipNextAsync()`, `SkipPreviousAsync()`, `SeekAsync(TimeSpan)`, `SetVolume(float)`. `CanTogglePlayPause` is `CanPlay || CanPause` — Task 7 must disable the Play/Pause button when it's false (Global Constraint: controls unsupported by the current session must be disabled, not just silently fail on tap). Consumed by Task 7 (XAML bindings) and Task 11 (composition root).
 
 - [ ] **Step 1: Write the fakes**
 
@@ -1032,6 +1032,31 @@ public class MainViewModelTests
     }
 
     [Fact]
+    public void DisablesPlayPause_WhenSessionSupportsNeitherPlayNorPause()
+    {
+        var watcher = new FakeMediaSessionWatcher();
+        var vm = new MainViewModel(watcher, new FakeVolumeController());
+
+        watcher.Current = new MediaSessionState(
+            SourceAppId: "Spotify.exe",
+            Title: "Song",
+            Artist: "Artist",
+            AlbumArt: null,
+            Status: PlaybackStatus.Playing,
+            CanPlay: false,
+            CanPause: false,
+            CanSkipNext: true,
+            CanSkipPrevious: true,
+            CanSeek: true,
+            Position: TimeSpan.Zero,
+            Duration: TimeSpan.FromMinutes(3),
+            LastUpdated: DateTimeOffset.UtcNow);
+        watcher.RaiseChanged();
+
+        Assert.False(vm.CanTogglePlayPause);
+    }
+
+    [Fact]
     public void SetVolume_UpdatesVolumeControllerAndProperty()
     {
         var watcher = new FakeMediaSessionWatcher();
@@ -1088,6 +1113,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string Artist { get; private set; } = string.Empty;
     public byte[]? AlbumArt { get; private set; }
     public bool IsPlaying { get; private set; }
+    public bool CanPlay { get; private set; }
+    public bool CanPause { get; private set; }
+    public bool CanTogglePlayPause => CanPlay || CanPause;
     public bool CanSkipNext { get; private set; }
     public bool CanSkipPrevious { get; private set; }
     public bool CanSeek { get; private set; }
@@ -1106,6 +1134,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Artist = current.Artist;
             AlbumArt = current.AlbumArt;
             IsPlaying = current.Status == PlaybackStatus.Playing;
+            CanPlay = current.CanPlay;
+            CanPause = current.CanPause;
             CanSkipNext = current.CanSkipNext;
             CanSkipPrevious = current.CanSkipPrevious;
             CanSeek = current.CanSeek;
@@ -1228,18 +1258,21 @@ Create `src/SpotiTube.Kiosk/Views/NowPlayingView.xaml`:
             <TextBlock Text="{Binding Artist}" Foreground="#FFAAAAAA" FontSize="20" HorizontalAlignment="Center" />
         </StackPanel>
 
-        <Slider Grid.Row="1"
+        <Slider x:Name="SeekSlider"
+                 Grid.Row="1"
                  Minimum="0"
                  Maximum="{Binding Duration.TotalSeconds}"
                  Value="{Binding Position.TotalSeconds, Mode=OneWay}"
+                 IsEnabled="{Binding CanSeek}"
                  Margin="24,0,24,8"
-                 Height="40" />
+                 Height="40"
+                 PreviewMouseLeftButtonUp="OnSeekBarReleased" />
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,24">
             <Button x:Name="PreviousButton" Content="⏮" FontSize="28" Width="72" Height="72"
                     IsEnabled="{Binding CanSkipPrevious}" Click="OnPreviousClick" />
             <Button x:Name="PlayPauseButton" Content="⏯" FontSize="28" Width="72" Height="72"
-                    Margin="16,0" Click="OnPlayPauseClick" />
+                    Margin="16,0" IsEnabled="{Binding CanTogglePlayPause}" Click="OnPlayPauseClick" />
             <Button x:Name="NextButton" Content="⏭" FontSize="28" Width="72" Height="72"
                     IsEnabled="{Binding CanSkipNext}" Click="OnNextClick" />
             <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" Value="{Binding Volume, Mode=OneWay}"
@@ -1278,8 +1311,17 @@ public partial class NowPlayingView : UserControl
 
     private void OnVolumeChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<double> e) =>
         Vm?.SetVolume((float)e.NewValue);
+
+    private async void OnSeekBarReleased(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (Vm is null) return;
+        var seconds = ((Slider)sender).Value;
+        await Vm.SeekAsync(TimeSpan.FromSeconds(seconds));
+    }
 }
 ```
+
+`PreviewMouseLeftButtonUp` fires after the user's drag ends and `Slider.Value` already reflects the dragged-to position (WPF updates the control's own value from the drag regardless of binding mode — `Mode=OneWay` only means that value isn't pushed back into `Position` automatically, which is why the explicit handler is needed here).
 
 - [ ] **Step 3: Wire both views into MainWindow**
 
