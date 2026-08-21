@@ -1072,6 +1072,27 @@ public class MainViewModelTests
         Assert.Equal(0.8f, volume.VolumeLevel);
         Assert.Equal(0.8f, vm.Volume);
     }
+
+    [Fact]
+    public void ResetsProperties_WhenSessionDisappears()
+    {
+        var watcher = new FakeMediaSessionWatcher();
+        var vm = new MainViewModel(watcher, new FakeVolumeController());
+
+        watcher.Current = PlayingSession();
+        watcher.RaiseChanged();
+        Assert.False(vm.IsIdle);
+        Assert.Equal("Song", vm.Title);
+
+        watcher.Current = null;
+        watcher.RaiseChanged();
+
+        Assert.True(vm.IsIdle);
+        Assert.Equal(string.Empty, vm.Title);
+        Assert.Equal(string.Empty, vm.Artist);
+        Assert.False(vm.IsPlaying);
+        Assert.False(vm.CanTogglePlayPause);
+    }
 }
 ```
 
@@ -1143,6 +1164,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
             Position = current.Position;
             Duration = current.Duration;
             Volume = _volume.GetVolume(current.SourceAppId);
+        }
+        else
+        {
+            Title = string.Empty;
+            Artist = string.Empty;
+            AlbumArt = null;
+            IsPlaying = false;
+            CanPlay = false;
+            CanPause = false;
+            CanSkipNext = false;
+            CanSkipPrevious = false;
+            CanSeek = false;
+            Position = TimeSpan.Zero;
+            Duration = TimeSpan.Zero;
+            Volume = 0f;
         }
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
