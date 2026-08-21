@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using SpotiTube.Kiosk.Threading;
 using Windows.Foundation;
 using Windows.Media.Control;
 
@@ -32,7 +33,7 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private MediaSessionState? _current;
     private GlobalSystemMediaTransportControlsSession? _currentSession;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -47,25 +48,8 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
                 // Marshal to the UI thread at the source: this setter runs on whatever thread WinRT
                 // delivered the SMTC callback on, and downstream consumers (the view-model, the
                 // window's visibility switch, XAML bindings) all touch DependencyObjects.
-                RunOnUiThread(() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Current))));
+                UiThread.Run(() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Current))));
             }
-        }
-    }
-
-    /// <summary>
-    /// Runs <paramref name="action"/> on the WPF UI thread, or inline when there is no WPF
-    /// <see cref="System.Windows.Application"/> (unit tests) or we are already on the UI thread.
-    /// </summary>
-    private static void RunOnUiThread(Action action)
-    {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
-        {
-            action();
-        }
-        else
-        {
-            dispatcher.Invoke(action);
         }
     }
 
