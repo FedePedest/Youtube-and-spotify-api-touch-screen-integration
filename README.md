@@ -35,10 +35,31 @@ OS state.
 - [ ] YouTube Music in a Google Chrome tab: same checks as above.
 - [ ] Play Spotify and YouTube Music at the same time, confirm the kiosk
       follows whichever one is actually playing.
-- [ ] Pause everything: kiosk falls back to the Idle clock view.
+- [ ] Pause everything: kiosk stays on the paused session (Now Playing view,
+      Play button re-enabled) rather than falling back to idle — the Idle
+      clock view only appears once every session is fully closed.
 - [ ] Unplug the touch monitor while the kiosk is showing Now Playing:
       window disappears without crashing.
 - [ ] Replug the touch monitor: window reappears full-screen on it,
       correctly positioned, without needing an app restart.
 - [ ] Reboot the PC: app auto-launches, finds the touch monitor, and
       shows the correct view without any manual steps.
+- [ ] If your PC has more than one display at noticeably different DPI
+      scaling (e.g. a high-DPI primary next to the 100%-scale touch
+      monitor), confirm the kiosk window lands on the touch monitor and
+      not the primary display — see "Known limitations" below.
+
+## Known limitations
+
+- **Seek bar doesn't animate during playback.** It updates correctly on
+  track changes, pause/resume, and manual seeks, but doesn't creep forward
+  second-by-second while a track plays — most media sessions (Spotify
+  included) don't push per-second position updates over SMTC, and the
+  kiosk doesn't yet poll for one. Dragging the seek bar to jump to a
+  position still works normally.
+- **Window placement on unusual multi-monitor DPI setups.** The kiosk
+  reliably fills the touch monitor correctly-*sized* regardless of DPI
+  scaling, but on a specific arrangement — a very wide, heavily-scaled
+  primary display with the touch monitor placed to its right — the window
+  could in theory seed itself onto the wrong monitor before maximizing.
+  Not expected to affect a typical single-primary + touch-monitor setup.
