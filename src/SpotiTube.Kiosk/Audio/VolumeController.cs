@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using NAudio.CoreAudioApi;
+using SpotiTube.Kiosk.Logging;
 
 namespace SpotiTube.Kiosk.Audio;
 
@@ -11,51 +12,94 @@ namespace SpotiTube.Kiosk.Audio;
 public sealed class VolumeController : IVolumeController
 {
     private readonly MMDeviceEnumerator _enumerator = new();
+    private readonly FileLogger? _logger;
+
+    /// <param name="logger">
+    /// Optional sink for Core Audio failures. Every public method here talks to COM, which can fail
+    /// for reasons entirely outside the app's control (default endpoint switched or removed mid-call,
+    /// no active render device at all). These calls sit on the media-event path, so an escaping
+    /// exception would take the whole kiosk down; instead each one is logged and degrades to a safe
+    /// default.
+    /// </param>
+    public VolumeController(FileLogger? logger = null)
+    {
+        _logger = logger;
+    }
 
     public float GetVolume(string sourceAppId)
     {
-        using var device = GetMasterDevice();
-        using var session = FindSession(device, sourceAppId);
-        return session is not null
-            ? session.SimpleAudioVolume.Volume
-            : device.AudioEndpointVolume.MasterVolumeLevelScalar;
+        try
+        {
+            using var device = GetMasterDevice();
+            using var session = FindSession(device, sourceAppId);
+            return session is not null
+                ? session.SimpleAudioVolume.Volume
+                : device.AudioEndpointVolume.MasterVolumeLevelScalar;
+        }
+        catch (Exception ex)
+        {
+            _logger?.Log($"GetVolume failed for '{sourceAppId}': {ex}");
+            return 0f;
+        }
     }
 
     public void SetVolume(string sourceAppId, float level)
     {
-        level = Math.Clamp(level, 0f, 1f);
-        using var device = GetMasterDevice();
-        using var session = FindSession(device, sourceAppId);
-        if (session is not null)
+        try
         {
-            session.SimpleAudioVolume.Volume = level;
+            level = Math.Clamp(level, 0f, 1f);
+            using var device = GetMasterDevice();
+            using var session = FindSession(device, sourceAppId);
+            if (session is not null)
+            {
+                session.SimpleAudioVolume.Volume = level;
+            }
+            else
+            {
+                device.AudioEndpointVolume.MasterVolumeLevelScalar = level;
+            }
         }
-        else
+        catch (Exception ex)
         {
-            device.AudioEndpointVolume.MasterVolumeLevelScalar = level;
+            _logger?.Log($"SetVolume failed for '{sourceAppId}': {ex}");
         }
     }
 
     public bool GetMute(string sourceAppId)
     {
-        using var device = GetMasterDevice();
-        using var session = FindSession(device, sourceAppId);
-        return session is not null
-            ? session.SimpleAudioVolume.Mute
-            : device.AudioEndpointVolume.Mute;
+        try
+        {
+            using var device = GetMasterDevice();
+            using var session = FindSession(device, sourceAppId);
+            return session is not null
+                ? session.SimpleAudioVolume.Mute
+                : device.AudioEndpointVolume.Mute;
+        }
+        catch (Exception ex)
+        {
+            _logger?.Log($"GetMute failed for '{sourceAppId}': {ex}");
+            return false;
+        }
     }
 
     public void SetMute(string sourceAppId, bool mute)
     {
-        using var device = GetMasterDevice();
-        using var session = FindSession(device, sourceAppId);
-        if (session is not null)
+        try
         {
-            session.SimpleAudioVolume.Mute = mute;
+            using var device = GetMasterDevice();
+            using var session = FindSession(device, sourceAppId);
+            if (session is not null)
+            {
+                session.SimpleAudioVolume.Mute = mute;
+            }
+            else
+            {
+                device.AudioEndpointVolume.Mute = mute;
+            }
         }
-        else
+        catch (Exception ex)
         {
-            device.AudioEndpointVolume.Mute = mute;
+            _logger?.Log($"SetMute failed for '{sourceAppId}': {ex}");
         }
     }
 

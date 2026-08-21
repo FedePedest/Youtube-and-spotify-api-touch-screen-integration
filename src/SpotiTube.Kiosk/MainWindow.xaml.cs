@@ -24,12 +24,22 @@ public partial class MainWindow : Window
         NowPlaying.Visibility = viewModel.IsIdle ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    /// <summary>
+    /// Moves the window onto <paramref name="screen"/> and fills it.
+    /// </summary>
+    /// <remarks>
+    /// Screen.Bounds is in physical pixels while WPF's Left/Top/Width/Height are device-independent
+    /// units, so copying the bounds across only lands correctly when every monitor sits at 100%
+    /// scaling. Instead, nudge the (restored) window to a point inside the target screen and let the
+    /// OS window manager maximize it there: the maximize is DPI-aware, so no manual pixel/DIP
+    /// conversion is needed and a scaling mismatch between the primary display and the touch panel
+    /// no longer mis-positions or mis-sizes the kiosk.
+    /// </remarks>
     public void PlaceOnDisplay(System.Windows.Forms.Screen screen)
     {
-        Left = screen.Bounds.Left;
-        Top = screen.Bounds.Top;
-        Width = screen.Bounds.Width;
-        Height = screen.Bounds.Height;
         WindowState = WindowState.Normal;
+        Left = screen.Bounds.Left + 10;
+        Top = screen.Bounds.Top + 10;
+        WindowState = WindowState.Maximized;
     }
 }

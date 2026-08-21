@@ -1,13 +1,15 @@
 using System.ComponentModel;
+using System.Windows.Threading;
 using SpotiTube.Kiosk.Audio;
 using SpotiTube.Kiosk.Media;
 
 namespace SpotiTube.Kiosk.ViewModels;
 
-public sealed class MainViewModel : INotifyPropertyChanged
+public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IMediaSessionWatcher _watcher;
     private readonly IVolumeController _volume;
+    private readonly DispatcherTimer _positionTimer;
 
     public MainViewModel(IMediaSessionWatcher watcher, IVolumeController volume)
     {
@@ -15,6 +17,30 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _volume = volume;
         _watcher.PropertyChanged += (s, e) => Refresh();
         Refresh();
+
+        // SMTC only raises TimelinePropertiesChanged on seek/track change for most apps (Spotify
+        // included), never on a per-second cadence, so without this tick the seek bar sits frozen
+        // for the whole track. This deliberately does NOT call Refresh(): that would also re-read
+        // the volume over COM every second for no reason.
+        _positionTimer = new DispatcherTimer(
+            DispatcherPriority.Normal,
+            System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher)
+        {
+            Interval = TimeSpan.FromSeconds(1),
+        };
+        _positionTimer.Tick += OnPositionTick;
+        _positionTimer.Start();
+    }
+
+    private void OnPositionTick(object? sender, EventArgs e)
+    {
+        if (IsIdle) return;
+
+        var current = _watcher.Current;
+        if (current is null || current.Position == Position) return;
+
+        Position = current.Position;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Position)));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -86,5 +112,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _volume.SetVolume(current.SourceAppId, level);
         Volume = level;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Volume)));
+    }
+
+    public void Dispose()
+    {
+        _positionTimer.Tick -= OnPositionTick;
+        _positionTimer.Stop();
     }
 }

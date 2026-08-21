@@ -16,6 +16,7 @@ public partial class App : System.Windows.Application
     private MediaSessionWatcher? _watcher;
     private DisplayWatcherService? _displayWatcher;
     private MainWindow? _window;
+    private MainViewModel? _viewModel;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -25,7 +26,24 @@ public partial class App : System.Windows.Application
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpotiTube.Kiosk");
         _logger = new FileLogger(Path.Combine(appDataDir, "kiosk.log"));
 
-        InstallAutostartIfNeeded();
+        // Unattended kiosk: log and keep running rather than dropping the user to the desktop.
+        DispatcherUnhandledException += (s, args) =>
+        {
+            _logger?.Log($"Unhandled UI exception: {args.Exception}");
+            args.Handled = true;
+        };
+
+        // Autostart registration goes through COM/WSH and the Startup folder, either of which can
+        // be blocked by policy or locked. Failing to register must not stop the kiosk from coming
+        // up on the touch monitor for this session.
+        try
+        {
+            InstallAutostartIfNeeded();
+        }
+        catch (Exception ex)
+        {
+            _logger.Log($"Autostart installation failed: {ex}");
+        }
 
         _watcher = new MediaSessionWatcher();
         await RetryPolicy.RunWithRetryAsync(
@@ -33,11 +51,11 @@ public partial class App : System.Windows.Application
             maxAttempts: 3,
             onError: ex => _logger.Log($"MediaSessionWatcher start failed: {ex}"));
 
-        var volumeController = new VolumeController();
-        var viewModel = new MainViewModel(_watcher, volumeController);
+        var volumeController = new VolumeController(_logger);
+        _viewModel = new MainViewModel(_watcher, volumeController);
 
         _window = new MainWindow();
-        _window.Bind(viewModel);
+        _window.Bind(_viewModel);
 
         var monitorConfigPath = Path.Combine(appDataDir, "monitor.json");
         var locator = new MonitorLocator(monitorConfigPath);
@@ -78,6 +96,7 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         _displayWatcher?.Dispose();
+        _viewModel?.Dispose();
         _watcher?.Dispose();
         base.OnExit(e);
     }
