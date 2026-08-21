@@ -30,8 +30,18 @@ public sealed class MonitorLocator
     private string? ReadConfiguredDeviceName()
     {
         if (!File.Exists(_configPath)) return null;
-        var config = JsonSerializer.Deserialize<MonitorConfig>(File.ReadAllText(_configPath));
-        return config?.DeviceName;
+        try
+        {
+            var config = JsonSerializer.Deserialize<MonitorConfig>(File.ReadAllText(_configPath));
+            return config?.DeviceName;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+            // A truncated/malformed config file (e.g. after an ungraceful shutdown on an
+            // unattended kiosk device, or a mid-write read) must not crash Locate(). Fall
+            // back to "no configured name" so resolution-based matching still runs.
+            return null;
+        }
     }
 
     private sealed record MonitorConfig(string DeviceName);
