@@ -12,18 +12,19 @@ namespace SpotiTube.Kiosk.Media;
 /// </summary>
 public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
 {
-    // Sessions and their known state are keyed by SourceAppUserModelId rather than by the
-    // GlobalSystemMediaTransportControlsSession object itself. WinRT projections are not
-    // guaranteed to hand back the same managed wrapper instance for the same underlying
-    // native session across repeated GetSessions() calls, so keying by object reference
-    // risks losing track of "already subscribed" sessions and re-subscribing duplicate
-    // event handlers on every SessionsChanged tick.
-    private readonly Dictionary<string, GlobalSystemMediaTransportControlsSession> _sessionsByAppId = new();
-    private readonly Dictionary<string, MediaSessionState> _states = new();
-    private readonly HashSet<string> _subscribedAppIds = new();
+    // Keyed by session object identity, not by SourceAppUserModelId. Two concurrent sessions
+    // (e.g. two browser tabs, or two windows of the same app) can legitimately share one
+    // SourceAppUserModelId while being distinct GlobalSystemMediaTransportControlsSession
+    // instances that each need their own tracked state and their own live event subscription.
+    // Object-identity keying relies on CsWinRT reusing the same managed wrapper for a given
+    // native session as long as a strong managed reference to it is kept alive (which these
+    // dictionaries provide) - this is the normal CsWinRT RCW-caching behavior.
+    private readonly Dictionary<GlobalSystemMediaTransportControlsSession, MediaSessionState> _states = new();
+    private readonly HashSet<GlobalSystemMediaTransportControlsSession> _subscribedSessions = new();
 
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private MediaSessionState? _current;
+    private GlobalSystemMediaTransportControlsSession? _currentSession;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -59,39 +60,42 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
         if (_manager is null) return;
 
         var sessions = _manager.GetSessions();
-        var seenAppIds = new HashSet<string>();
+        var seen = new HashSet<GlobalSystemMediaTransportControlsSession>();
 
         foreach (var session in sessions)
         {
-            var appId = session.SourceAppUserModelId;
-            seenAppIds.Add(appId);
-            _sessionsByAppId[appId] = session;
+            seen.Add(session);
 
-            // Only attach handlers the first time we see this app id. RefreshAllAsync runs
-            // on every SessionsChanged tick (e.g. an unrelated session opening or closing
-            // elsewhere), so without this guard sessions that persist across ticks would
-            // accumulate duplicate subscriptions and OnSessionChangedAsync would fire once
-            // per accumulated subscription instead of once per real event.
-            if (_subscribedAppIds.Add(appId))
+            // Only attach handlers the first time we see this exact session object.
+            // RefreshAllAsync runs on every SessionsChanged tick (e.g. an unrelated session
+            // opening or closing elsewhere), so without this guard a session that persists
+            // across ticks would accumulate duplicate subscriptions and OnSessionChangedAsync
+            // would fire once per accumulated subscription instead of once per real event.
+            if (_subscribedSessions.Add(session))
             {
                 session.MediaPropertiesChanged += OnMediaPropertiesChanged;
                 session.PlaybackInfoChanged += OnPlaybackInfoChanged;
                 session.TimelinePropertiesChanged += OnTimelinePropertiesChanged;
             }
 
-            await UpdateStateAsync(session, appId);
+            await UpdateStateAsync(session);
         }
 
-        // Drop bookkeeping for sessions that no longer exist so a later reappearance
-        // (e.g. the same app id reused by a new session object) resubscribes cleanly.
-        foreach (var staleAppId in _states.Keys.Where(id => !seenAppIds.Contains(id)).ToList())
+        // Sessions that disappeared: drop their tracked state and unsubscribe. Because
+        // everything here is keyed by session object identity, two same-appId sessions are
+        // tracked and cleaned up independently - removing one doesn't touch the other.
+        foreach (var stale in _states.Keys.Where(s => !seen.Contains(s)).ToList())
         {
-            _states.Remove(staleAppId);
-            _sessionsByAppId.Remove(staleAppId);
-            _subscribedAppIds.Remove(staleAppId);
+            _states.Remove(stale);
+            if (_subscribedSessions.Remove(stale))
+            {
+                stale.MediaPropertiesChanged -= OnMediaPropertiesChanged;
+                stale.PlaybackInfoChanged -= OnPlaybackInfoChanged;
+                stale.TimelinePropertiesChanged -= OnTimelinePropertiesChanged;
+            }
         }
 
-        Current = CurrentSessionSelector.SelectCurrent(_states.Values.ToList());
+        ApplySelection();
     }
 
     private async void OnMediaPropertiesChanged(
@@ -111,19 +115,16 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
 
     private async Task OnSessionChangedAsync(GlobalSystemMediaTransportControlsSession session)
     {
-        var appId = session.SourceAppUserModelId;
-        if (!_subscribedAppIds.Contains(appId)) return;
+        if (!_subscribedSessions.Contains(session)) return;
 
-        // The sender delivered by the event is the freshest wrapper for this session; keep
-        // it so TryXAsync calls below always go through a live object.
-        _sessionsByAppId[appId] = session;
-        await UpdateStateAsync(session, appId);
-        Current = CurrentSessionSelector.SelectCurrent(_states.Values.ToList());
+        await UpdateStateAsync(session);
+        ApplySelection();
     }
 
-    private async Task UpdateStateAsync(GlobalSystemMediaTransportControlsSession session, string appId)
+    private async Task UpdateStateAsync(GlobalSystemMediaTransportControlsSession session)
     {
-        var newState = await ReadStateAsync(session);
+        _states.TryGetValue(session, out var existing);
+        var newState = await ReadStateAsync(session, existing);
 
         // If nothing meaningful changed, keep the existing record (and its LastUpdated
         // timestamp) rather than overwriting it. Without this, every RefreshAllAsync pass
@@ -131,12 +132,42 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
         // LastUpdated on every tracked session, which would both cause Current's
         // PropertyChanged to fire spuriously (the record's structural equality includes
         // LastUpdated) and skew CurrentSessionSelector's most-recently-updated tie-break.
-        if (_states.TryGetValue(appId, out var existing) && ContentEquals(existing, newState))
+        if (existing is not null && ContentEquals(existing, newState))
         {
             return;
         }
 
-        _states[appId] = newState;
+        _states[session] = newState;
+    }
+
+    /// <summary>
+    /// Recomputes <see cref="Current"/> (and the session object backing it) from the current
+    /// <see cref="_states"/> snapshot via <see cref="CurrentSessionSelector.SelectCurrent"/>.
+    /// </summary>
+    private void ApplySelection()
+    {
+        var selected = CurrentSessionSelector.SelectCurrent(_states.Values.ToList());
+        _currentSession = FindSessionForState(selected);
+        Current = selected;
+    }
+
+    /// <summary>
+    /// Maps a <see cref="MediaSessionState"/> back to the session object that produced it.
+    /// <paramref name="state"/> is always one of the exact object instances currently held in
+    /// <see cref="_states"/>'s values (CurrentSessionSelector only filters/reorders, it never
+    /// copies), so a reference-equality scan always finds it when <paramref name="state"/> is
+    /// non-null.
+    /// </summary>
+    private GlobalSystemMediaTransportControlsSession? FindSessionForState(MediaSessionState? state)
+    {
+        if (state is null) return null;
+
+        foreach (var kvp in _states)
+        {
+            if (ReferenceEquals(kvp.Value, state)) return kvp.Key;
+        }
+
+        return null;
     }
 
     private static bool ContentEquals(MediaSessionState a, MediaSessionState b) =>
@@ -160,19 +191,40 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
         return a.AsSpan().SequenceEqual(b);
     }
 
-    private static async Task<MediaSessionState> ReadStateAsync(GlobalSystemMediaTransportControlsSession session)
+    private static async Task<MediaSessionState> ReadStateAsync(
+        GlobalSystemMediaTransportControlsSession session,
+        MediaSessionState? previous)
     {
         var props = await session.TryGetMediaPropertiesAsync();
         var playback = session.GetPlaybackInfo();
         var timeline = session.GetTimelineProperties();
 
-        byte[]? art = null;
-        if (props?.Thumbnail is not null)
+        var title = props?.Title ?? string.Empty;
+        var artist = props?.Artist ?? string.Empty;
+
+        // Reading the thumbnail means opening and copying a stream, which is comparatively
+        // expensive and happens on every TimelinePropertiesChanged tick during active
+        // playback even though the artwork itself only changes when the track changes. Reuse
+        // the previously read bytes whenever the track identity (app + title + artist) hasn't
+        // moved instead of re-reading and re-comparing it every time.
+        byte[]? art;
+        if (previous is not null
+            && previous.SourceAppId == session.SourceAppUserModelId
+            && previous.Title == title
+            && previous.Artist == artist)
+        {
+            art = previous.AlbumArt;
+        }
+        else if (props?.Thumbnail is not null)
         {
             using var stream = await props.Thumbnail.OpenReadAsync();
             using var ms = new MemoryStream();
             await stream.AsStreamForRead().CopyToAsync(ms);
             art = ms.ToArray();
+        }
+        else
+        {
+            art = null;
         }
 
         var status = playback.PlaybackStatus switch
@@ -188,8 +240,8 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
 
         return new MediaSessionState(
             SourceAppId: session.SourceAppUserModelId,
-            Title: props?.Title ?? string.Empty,
-            Artist: props?.Artist ?? string.Empty,
+            Title: title,
+            Artist: artist,
             AlbumArt: art,
             Status: status,
             CanPlay: controls.IsPlayEnabled,
@@ -211,14 +263,8 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
     private Task<bool> WithCurrentSessionAsync(
         Func<GlobalSystemMediaTransportControlsSession, IAsyncOperation<bool>> action)
     {
-        var session = GetCurrentSession();
+        var session = _currentSession;
         return session is null ? Task.FromResult(false) : action(session).AsTask();
-    }
-
-    private GlobalSystemMediaTransportControlsSession? GetCurrentSession()
-    {
-        if (_current is null) return null;
-        return _sessionsByAppId.TryGetValue(_current.SourceAppId, out var session) ? session : null;
     }
 
     public void Dispose()
@@ -228,17 +274,16 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
             _manager.SessionsChanged -= OnSessionsChanged;
         }
 
-        foreach (var (appId, session) in _sessionsByAppId)
+        foreach (var session in _subscribedSessions)
         {
-            if (!_subscribedAppIds.Contains(appId)) continue;
             session.MediaPropertiesChanged -= OnMediaPropertiesChanged;
             session.PlaybackInfoChanged -= OnPlaybackInfoChanged;
             session.TimelinePropertiesChanged -= OnTimelinePropertiesChanged;
         }
 
-        _subscribedAppIds.Clear();
-        _sessionsByAppId.Clear();
+        _subscribedSessions.Clear();
         _states.Clear();
+        _currentSession = null;
         _manager = null;
     }
 }
