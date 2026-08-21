@@ -22,9 +22,17 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
     private readonly Dictionary<GlobalSystemMediaTransportControlsSession, MediaSessionState> _states = new();
     private readonly HashSet<GlobalSystemMediaTransportControlsSession> _subscribedSessions = new();
 
+    // Serializes every mutation of _states/_subscribedSessions. WinRT delivers SessionsChanged and
+    // the per-session change events on arbitrary thread-pool threads, and the handlers below await
+    // mid-body, so two refreshes can legitimately be in flight at the same time (e.g. a track change
+    // in one app while another app's session opens). Non-concurrent Dictionary/HashSet under
+    // concurrent mutation can corrupt their internal state or throw from an in-progress enumeration.
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private MediaSessionState? _current;
     private GlobalSystemMediaTransportControlsSession? _currentSession;
+    private bool _disposed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -36,8 +44,28 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
             if (!Equals(_current, value))
             {
                 _current = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Current)));
+                // Marshal to the UI thread at the source: this setter runs on whatever thread WinRT
+                // delivered the SMTC callback on, and downstream consumers (the view-model, the
+                // window's visibility switch, XAML bindings) all touch DependencyObjects.
+                RunOnUiThread(() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Current))));
             }
+        }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on the WPF UI thread, or inline when there is no WPF
+    /// <see cref="System.Windows.Application"/> (unit tests) or we are already on the UI thread.
+    /// </summary>
+    private static void RunOnUiThread(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            action();
+        }
+        else
+        {
+            dispatcher.Invoke(action);
         }
     }
 
@@ -56,6 +84,19 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
     }
 
     private async Task RefreshAllAsync()
+    {
+        if (!await EnterGateAsync().ConfigureAwait(false)) return;
+        try
+        {
+            await RefreshAllCoreAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            ExitGate();
+        }
+    }
+
+    private async Task RefreshAllCoreAsync()
     {
         if (_manager is null) return;
 
@@ -115,10 +156,57 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
 
     private async Task OnSessionChangedAsync(GlobalSystemMediaTransportControlsSession session)
     {
-        if (!_subscribedSessions.Contains(session)) return;
+        if (!await EnterGateAsync().ConfigureAwait(false)) return;
+        try
+        {
+            if (!_subscribedSessions.Contains(session)) return;
 
-        await UpdateStateAsync(session);
-        ApplySelection();
+            await UpdateStateAsync(session).ConfigureAwait(false);
+            ApplySelection();
+        }
+        finally
+        {
+            ExitGate();
+        }
+    }
+
+    /// <summary>
+    /// Acquires <see cref="_gate"/>. Returns false when the watcher has been (or is being) disposed,
+    /// in which case the caller must not run its body and must not call <see cref="ExitGate"/>.
+    /// </summary>
+    private async Task<bool> EnterGateAsync()
+    {
+        if (_disposed) return false;
+
+        try
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed while an in-flight WinRT callback was waiting to enter; nothing left to do.
+            return false;
+        }
+
+        if (_disposed)
+        {
+            ExitGate();
+            return false;
+        }
+
+        return true;
+    }
+
+    private void ExitGate()
+    {
+        try
+        {
+            _gate.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed while we held the gate; there is nothing to release into.
+        }
     }
 
     private async Task UpdateStateAsync(GlobalSystemMediaTransportControlsSession session)
@@ -269,12 +357,18 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+
+        // Set first so any WinRT callback still queued behind the gate bails out instead of
+        // mutating the collections we are about to tear down.
+        _disposed = true;
+
         if (_manager is not null)
         {
             _manager.SessionsChanged -= OnSessionsChanged;
         }
 
-        foreach (var session in _subscribedSessions)
+        foreach (var session in _subscribedSessions.ToList())
         {
             session.MediaPropertiesChanged -= OnMediaPropertiesChanged;
             session.PlaybackInfoChanged -= OnPlaybackInfoChanged;
@@ -285,5 +379,6 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
         _states.Clear();
         _currentSession = null;
         _manager = null;
+        _gate.Dispose();
     }
 }
