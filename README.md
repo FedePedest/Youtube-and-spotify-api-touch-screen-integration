@@ -6,7 +6,37 @@ YouTube Music on the PC. Uses Windows' System Media Transport Controls —
 no API keys, no OAuth, no Spotify/YouTube accounts to configure.
 
 
-## Running
+## Installing
+
+Grab `SpotiTube.Kiosk.Setup.exe` from the [Releases](https://github.com/FedePedest/Youtube-and-spotify-api-touch-screen-integration/releases)
+page (or build it yourself, see below) and run it. The installer:
+
+- Copies the app to `Program Files\SpotiTube Kiosk`.
+- Adds a Start Menu shortcut (and, optionally, a desktop shortcut).
+- Offers to launch the app at the end of setup — say yes, since that
+  first launch is what registers auto-start (see below).
+
+No accounts, API keys, or extra dependencies are needed — it's a
+self-contained build, so the target PC doesn't need .NET installed
+separately.
+
+To uninstall, use "Add or remove programs" like any other Windows app;
+this also removes the auto-start shortcut.
+
+### Building the installer yourself
+
+Requires the .NET 8 SDK and [Inno Setup 6](https://jrsoftware.org/isdl.php).
+
+```powershell
+installer\build.ps1
+```
+
+This publishes a self-contained `win-x64` build and compiles it into
+`installer\output\SpotiTube.Kiosk.Setup.exe`. See `installer\SpotiTube.Kiosk.iss`
+for the Inno Setup script, or `installer\build.ps1 -Version 1.2.0` to stamp a
+specific version.
+
+## Running from source
 
 ```
 dotnet run --project src/SpotiTube.Kiosk/SpotiTube.Kiosk.csproj
@@ -19,7 +49,10 @@ manually again.
 Autostart is installed for real the first time the app actually launches
 on a machine — running it will add a shortcut to your Windows Startup
 folder, so expect that to happen the first time you run it yourself.
+This is also what the installer's "launch now" option triggers, pointed
+at the installed copy in `Program Files` rather than your build output.
 
+For the best experience, run the app on a touch monitor with a 1024x600 resolution and use wallpapper engines playlist feature.
 ## Manual test checklist
 
 Run through this after any change touching `Media/`, `Audio/`, `Display/`,

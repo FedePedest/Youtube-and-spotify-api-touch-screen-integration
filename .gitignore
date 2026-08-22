@@ -365,3 +365,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# dotnet publish output used to build the installer
+/publish/
+
+# Compiled installer output
+installer/output/
