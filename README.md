@@ -5,9 +5,6 @@ monitor and shows/controls whatever is currently playing via Spotify or
 YouTube Music on the PC. Uses Windows' System Media Transport Controls —
 no API keys, no OAuth, no Spotify/YouTube accounts to configure.
 
-See `docs/superpowers/specs/2026-08-21-touch-kiosk-design.md` for the
-design and `docs/superpowers/plans/2026-08-21-touch-kiosk.md` for how it
-was built.
 
 ## Running
 
