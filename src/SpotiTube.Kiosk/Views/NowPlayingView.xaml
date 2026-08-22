@@ -1,54 +1,81 @@
 <UserControl x:Class="SpotiTube.Kiosk.Views.NowPlayingView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:SpotiTube.Kiosk.Views"
              xmlns:converters="clr-namespace:SpotiTube.Kiosk.Views.Converters">
     <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibility" />
         <converters:ByteArrayToImageSourceConverter x:Key="AlbumArtConverter" />
+        <converters:HexColorToBrushConverter x:Key="AccentColorConverter" />
     </UserControl.Resources>
-    <Grid Background="#FF101010">
+    <Grid Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Blurred album art background layer. Source is unset when the session has no artwork,
-             in which case nothing renders here and the Grid's flat background shows through. -->
-        <Image Grid.Row="0"
-               Grid.RowSpan="3"
+        <!-- Video sessions get an opaque backdrop behind their blurred thumbnail; audio-only
+             sessions stay transparent so the window's own wallpaper blur-behind shows through. -->
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="#FF000000"
+                Visibility="{Binding IsVideo, Converter={StaticResource BoolToVisibility}}" />
+
+        <!-- For video sessions (e.g. YouTube), blur that video's own thumbnail into the background
+             instead of the wallpaper - it's more relevant to what's actually playing. -->
+        <Image Grid.Row="0" Grid.RowSpan="3"
                Source="{Binding AlbumArt, Converter={StaticResource AlbumArtConverter}}"
                Stretch="UniformToFill"
-               Opacity="0.5"
-               IsHitTestVisible="False">
+               Opacity="0.55"
+               IsHitTestVisible="False"
+               Visibility="{Binding IsVideo, Converter={StaticResource BoolToVisibility}}">
             <Image.Effect>
-                <BlurEffect Radius="20" />
+                <BlurEffect Radius="35" />
             </Image.Effect>
         </Image>
 
         <StackPanel Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center">
-            <TextBlock Text="{Binding Title}" Foreground="White" FontSize="32" HorizontalAlignment="Center" />
-            <TextBlock Text="{Binding Artist}" Foreground="#FFAAAAAA" FontSize="20" HorizontalAlignment="Center" />
+            <views:VinylDisc AlbumArt="{Binding AlbumArt}" IsPlaying="{Binding IsPlaying}" Margin="0,0,0,20" />
+            <TextBlock Text="{Binding Title}" Foreground="White" FontSize="26" FontWeight="Bold"
+                       HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="680" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding Artist}" Foreground="#FFB3B3B3" FontSize="16"
+                       HorizontalAlignment="Center" Margin="0,4,0,0" />
         </StackPanel>
 
         <Slider x:Name="SeekSlider"
                  Grid.Row="1"
+                 Style="{StaticResource SpotifySliderStyle}"
+                 Foreground="{Binding AccentColorHex, Converter={StaticResource AccentColorConverter}}"
                  Minimum="0"
                  Maximum="{Binding Duration.TotalSeconds}"
                  Value="{Binding Position.TotalSeconds, Mode=OneWay}"
                  IsEnabled="{Binding CanSeek}"
-                 Margin="24,0,24,8"
-                 Height="40"
+                 Margin="32,0,32,8"
                  PreviewMouseLeftButtonUp="OnSeekBarReleased" />
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,24">
-            <Button x:Name="PreviousButton" Content="⏮" FontSize="28" Width="72" Height="72"
-                    IsEnabled="{Binding CanSkipPrevious}" Click="OnPreviousClick" />
-            <Button x:Name="PlayPauseButton" Content="⏯" FontSize="28" Width="72" Height="72"
-                    Margin="16,0" IsEnabled="{Binding CanTogglePlayPause}" Click="OnPlayPauseClick" />
-            <Button x:Name="NextButton" Content="⏭" FontSize="28" Width="72" Height="72"
-                    IsEnabled="{Binding CanSkipNext}" Click="OnNextClick" />
-            <Slider x:Name="VolumeSlider" Minimum="0" Maximum="1" Value="{Binding Volume, Mode=OneWay}"
-                    Width="160" Margin="24,0,0,0" VerticalAlignment="Center"
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" Margin="0,0,0,28">
+            <Button x:Name="PreviousButton" Style="{StaticResource SpotifySkipButtonStyle}"
+                    IsEnabled="{Binding CanSkipPrevious}" Click="OnPreviousClick">
+                <Path Data="{StaticResource IconSkipPrevious}" Width="24" Height="24" Stretch="Uniform" Fill="White" />
+            </Button>
+            <Button x:Name="PlayPauseButton" Style="{StaticResource SpotifyPlayPauseButtonStyle}"
+                    Margin="20,0" IsEnabled="{Binding CanTogglePlayPause}" Click="OnPlayPauseClick">
+                <Grid Width="30" Height="30">
+                    <Path Data="{StaticResource IconPlay}" Stretch="Uniform" Fill="Black"
+                          Visibility="{Binding IsPlaying, Converter={StaticResource InverseBoolToVisibility}}" />
+                    <Path Data="{StaticResource IconPause}" Stretch="Uniform" Fill="Black"
+                          Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibility}}" />
+                </Grid>
+            </Button>
+            <Button x:Name="NextButton" Style="{StaticResource SpotifySkipButtonStyle}"
+                    IsEnabled="{Binding CanSkipNext}" Click="OnNextClick">
+                <Path Data="{StaticResource IconSkipNext}" Width="24" Height="24" Stretch="Uniform" Fill="White" />
+            </Button>
+            <Slider x:Name="VolumeSlider" Style="{StaticResource SpotifySliderStyle}"
+                    Foreground="{Binding AccentColorHex, Converter={StaticResource AccentColorConverter}}"
+                    Minimum="0" Maximum="1" Value="{Binding Volume, Mode=OneWay}"
+                    Width="140" Margin="32,0,0,0" VerticalAlignment="Center"
                     ValueChanged="OnVolumeChanged" />
         </StackPanel>
     </Grid>

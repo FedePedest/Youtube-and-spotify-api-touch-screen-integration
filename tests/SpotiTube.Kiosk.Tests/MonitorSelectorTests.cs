@@ -6,14 +6,13 @@ namespace SpotiTube.Kiosk.Tests;
 public class MonitorSelectorTests
 {
     [Fact]
-    public void NoDisplaysMatchResolution_ReturnsNull()
+    public void NoDisplays_ReturnsNull()
     {
-        var displays = new[] { new DisplayInfo("\\\\.\\DISPLAY1", 1920, 1080, true) };
-        Assert.Null(MonitorSelector.SelectTouchMonitor(displays, configuredDeviceName: null));
+        Assert.Null(MonitorSelector.SelectTouchMonitor(Array.Empty<DisplayInfo>(), configuredDeviceName: null));
     }
 
     [Fact]
-    public void OneDisplayMatchesResolution_ReturnsIt()
+    public void PicksSmallestAreaDisplay()
     {
         var displays = new[]
         {
@@ -25,7 +24,21 @@ public class MonitorSelectorTests
     }
 
     [Fact]
-    public void MultipleMatch_PrefersNonPrimary()
+    public void SmallestByArea_NotJustNarrowest()
+    {
+        // DISPLAY2 is narrower but taller, giving it a larger area than DISPLAY3.
+        var displays = new[]
+        {
+            new DisplayInfo("\\\\.\\DISPLAY1", 1920, 1080, true),
+            new DisplayInfo("\\\\.\\DISPLAY2", 800, 1200, false),
+            new DisplayInfo("\\\\.\\DISPLAY3", 1024, 600, false),
+        };
+        var result = MonitorSelector.SelectTouchMonitor(displays, configuredDeviceName: null);
+        Assert.Equal("\\\\.\\DISPLAY3", result!.DeviceName);
+    }
+
+    [Fact]
+    public void TiedSmallestArea_PrefersNonPrimary()
     {
         var displays = new[]
         {
@@ -37,7 +50,7 @@ public class MonitorSelectorTests
     }
 
     [Fact]
-    public void ConfiguredDeviceName_TakesPriorityOverResolutionMatch()
+    public void ConfiguredDeviceName_TakesPriorityOverSmallestArea()
     {
         var displays = new[]
         {
@@ -46,5 +59,17 @@ public class MonitorSelectorTests
         };
         var result = MonitorSelector.SelectTouchMonitor(displays, configuredDeviceName: "\\\\.\\DISPLAY1");
         Assert.Equal("\\\\.\\DISPLAY1", result!.DeviceName);
+    }
+
+    [Fact]
+    public void ConfiguredDeviceName_NotFound_FallsBackToSmallestArea()
+    {
+        var displays = new[]
+        {
+            new DisplayInfo("\\\\.\\DISPLAY1", 1920, 1080, true),
+            new DisplayInfo("\\\\.\\DISPLAY2", 1024, 600, false),
+        };
+        var result = MonitorSelector.SelectTouchMonitor(displays, configuredDeviceName: "\\\\.\\DISPLAY9");
+        Assert.Equal("\\\\.\\DISPLAY2", result!.DeviceName);
     }
 }

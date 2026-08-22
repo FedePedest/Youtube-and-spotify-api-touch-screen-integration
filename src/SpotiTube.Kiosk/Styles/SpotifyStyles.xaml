@@ -1,0 +1,180 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Palette -->
+    <SolidColorBrush x:Key="SpotifyBlackBrush" Color="#FF000000" />
+    <SolidColorBrush x:Key="SpotifyBackgroundBrush" Color="#FF121212" />
+    <SolidColorBrush x:Key="SpotifyGreenBrush" Color="#FF1DB954" />
+    <SolidColorBrush x:Key="SpotifyWhiteBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="SpotifyGrayTextBrush" Color="#FFB3B3B3" />
+    <SolidColorBrush x:Key="SpotifyTrackBrush" Color="#FF4D4D4D" />
+
+    <!-- Transport icon glyphs, drawn in a 24x24 box -->
+    <Geometry x:Key="IconPlay">M5,3 L5,21 L19,12 Z</Geometry>
+    <Geometry x:Key="IconPause">M6,4 H10 V20 H6 Z M14,4 H18 V20 H14 Z</Geometry>
+    <Geometry x:Key="IconSkipNext">M4,4 L4,20 L14,12 Z M16,4 H18 V20 H16 Z</Geometry>
+    <Geometry x:Key="IconSkipPrevious">M20,4 L20,20 L10,12 Z M6,4 H8 V20 H6 Z</Geometry>
+    <Geometry x:Key="IconMusicNote">M9,4 V15.5 A3.5,3.5 0 1 1 8,13 V6 L18,4 V13.5 A3.5,3.5 0 1 1 17,11 V6 Z</Geometry>
+
+    <!-- Small circular icon buttons (skip previous / skip next) -->
+    <Style x:Key="SpotifySkipButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="64" />
+        <Setter Property="Height" Value="64" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid x:Name="RootGrid" Background="{TemplateBinding Background}" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform x:Name="ScaleXform" ScaleX="1" ScaleY="1" />
+                        </Grid.RenderTransform>
+                        <Ellipse Fill="Transparent" />
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ScaleXform" Storyboard.TargetProperty="ScaleX" To="0.88" Duration="0:0:0.08" />
+                                        <DoubleAnimation Storyboard.TargetName="ScaleXform" Storyboard.TargetProperty="ScaleY" To="0.88" Duration="0:0:0.08" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ScaleXform" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.12" />
+                                        <DoubleAnimation Storyboard.TargetName="ScaleXform" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="RootGrid" Property="Opacity" Value="0.35" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Large filled play/pause button -->
+    <Style x:Key="SpotifyPlayPauseButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="88" />
+        <Setter Property="Height" Value="88" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid x:Name="RootGrid" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform x:Name="ScaleXform" ScaleX="1" ScaleY="1" />
+                        </Grid.RenderTransform>
+                        <Ellipse x:Name="Backdrop" Fill="{StaticResource SpotifyWhiteBrush}" />
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ScaleXform" Storyboard.TargetProperty="ScaleX" To="0.92" Duration="0:0:0.08" />
+                                        <DoubleAnimation Storyboard.TargetName="ScaleXform" Storyboard.TargetProperty="ScaleY" To="0.92" Duration="0:0:0.08" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ScaleXform" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.12" />
+                                        <DoubleAnimation Storyboard.TargetName="ScaleXform" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Backdrop" Property="Fill" Value="{StaticResource SpotifyTrackBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Thin flat slider with an "elapsed" fill, used for both the seek bar and volume. The fill
+         color comes from the RepeatButton's (inherited) Foreground rather than a fixed brush, so
+         binding Slider.Foreground per-instance themes the bar off whatever's currently playing. -->
+    <Style x:Key="SpotifySliderFillButtonStyle" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Grid Background="Transparent">
+                        <Border Height="4" CornerRadius="2" Background="{TemplateBinding Foreground}" VerticalAlignment="Center" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SpotifySliderTrackButtonStyle" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Grid Background="Transparent">
+                        <Border Height="4" CornerRadius="2" Background="{StaticResource SpotifyTrackBrush}" VerticalAlignment="Center" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SpotifySliderThumbStyle" TargetType="Thumb">
+        <Setter Property="Width" Value="14" />
+        <Setter Property="Height" Value="14" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Ellipse Fill="{StaticResource SpotifyWhiteBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SpotifySliderStyle" TargetType="Slider">
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Foreground" Value="{StaticResource SpotifyGreenBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid VerticalAlignment="Center">
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge" Style="{StaticResource SpotifySliderFillButtonStyle}"
+                                              Foreground="{TemplateBinding Foreground}" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge" Style="{StaticResource SpotifySliderTrackButtonStyle}" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource SpotifySliderThumbStyle}" />
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.35" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

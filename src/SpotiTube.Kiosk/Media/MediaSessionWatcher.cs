@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using SpotiTube.Kiosk.Threading;
 using Windows.Foundation;
+using Windows.Media;
 using Windows.Media.Control;
 
 namespace SpotiTube.Kiosk.Media;
@@ -30,9 +31,12 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
     // concurrent mutation can corrupt their internal state or throw from an in-progress enumeration.
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    private static readonly TimeSpan FollowUpRecheckDelay = TimeSpan.FromSeconds(3);
+
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private MediaSessionState? _current;
     private GlobalSystemMediaTransportControlsSession? _currentSession;
+    private (GlobalSystemMediaTransportControlsSession Session, string Title, string Artist)? _lastScheduledFollowUp;
     private volatile bool _disposed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -138,20 +142,44 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
         TimelinePropertiesChangedEventArgs args)
         => await OnSessionChangedAsync(sender);
 
-    private async Task OnSessionChangedAsync(GlobalSystemMediaTransportControlsSession session)
+    private async Task OnSessionChangedAsync(GlobalSystemMediaTransportControlsSession session, bool forceFreshRead = false)
     {
         if (!await EnterGateAsync().ConfigureAwait(false)) return;
         try
         {
             if (!_subscribedSessions.Contains(session)) return;
 
-            await UpdateStateAsync(session).ConfigureAwait(false);
+            await UpdateStateAsync(session, forceFreshRead).ConfigureAwait(false);
             ApplySelection();
         }
         finally
         {
             ExitGate();
         }
+    }
+
+    /// <summary>
+    /// SMTC's very first read of a newly-current track can catch it mid-transition - title/artist
+    /// or artwork that hasn't settled yet - and since nothing necessarily fires another change event
+    /// once it does settle, a wrong read can otherwise stick for the rest of the track. Schedule one
+    /// forced, cache-bypassing re-read a few seconds after a track becomes current to catch up if
+    /// that happened, without polling continuously.
+    /// </summary>
+    private void ScheduleFollowUpRecheck(GlobalSystemMediaTransportControlsSession session)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(FollowUpRecheckDelay).ConfigureAwait(false);
+                await OnSessionChangedAsync(session, forceFreshRead: true).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort re-verification; the session may have closed or the read may have
+                // failed transiently. The regular event-driven path still covers real changes.
+            }
+        });
     }
 
     /// <summary>
@@ -193,10 +221,15 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
         }
     }
 
-    private async Task UpdateStateAsync(GlobalSystemMediaTransportControlsSession session)
+    private async Task UpdateStateAsync(GlobalSystemMediaTransportControlsSession session, bool forceFreshRead = false)
     {
         _states.TryGetValue(session, out var existing);
-        var newState = await ReadStateAsync(session, existing);
+        // forceFreshRead deliberately passes null instead of existing: ReadStateAsync only takes its
+        // "reuse the cached thumbnail" shortcut when previous is non-null, so this makes it actually
+        // re-fetch title/artist/art from the live session rather than trusting what's cached. The
+        // ContentEquals check below still runs against the real existing state either way, so a
+        // forced read that confirms nothing actually changed still doesn't churn LastUpdated.
+        var newState = await ReadStateAsync(session, forceFreshRead ? null : existing);
 
         // If nothing meaningful changed, keep the existing record (and its LastUpdated
         // timestamp) rather than overwriting it. Without this, every RefreshAllAsync pass
@@ -219,8 +252,23 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
     private void ApplySelection()
     {
         var selected = CurrentSessionSelector.SelectCurrent(_states.Values.ToList());
-        _currentSession = FindSessionForState(selected);
+        var session = FindSessionForState(selected);
+        _currentSession = session;
         Current = selected;
+
+        if (selected is not null && session is not null)
+        {
+            var trackIdentity = (session, selected.Title, selected.Artist);
+            if (_lastScheduledFollowUp != trackIdentity)
+            {
+                _lastScheduledFollowUp = trackIdentity;
+                ScheduleFollowUpRecheck(session);
+            }
+        }
+        else
+        {
+            _lastScheduledFollowUp = null;
+        }
     }
 
     /// <summary>
@@ -254,6 +302,7 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
         && a.CanSeek == b.CanSeek
         && a.Position == b.Position
         && a.Duration == b.Duration
+        && a.IsVideo == b.IsVideo
         && AlbumArtEquals(a.AlbumArt, b.AlbumArt);
 
     private static bool AlbumArtEquals(byte[]? a, byte[]? b)
@@ -273,19 +322,44 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
 
         var title = props?.Title ?? string.Empty;
         var artist = props?.Artist ?? string.Empty;
+        var isVideo = props?.PlaybackType == MediaPlaybackType.Video;
+
+        var status = playback.PlaybackStatus switch
+        {
+            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing => PlaybackStatus.Playing,
+            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused => PlaybackStatus.Paused,
+            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Stopped => PlaybackStatus.Stopped,
+            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Changing => PlaybackStatus.Changing,
+            _ => PlaybackStatus.Closed,
+        };
 
         // Reading the thumbnail means opening and copying a stream, which is comparatively
-        // expensive and happens on every TimelinePropertiesChanged tick during active
-        // playback even though the artwork itself only changes when the track changes. Reuse
-        // the previously read bytes whenever the track identity (app + title + artist) hasn't
-        // moved instead of re-reading and re-comparing it every time.
+        // expensive and happens on every TimelinePropertiesChanged tick during active playback
+        // even though the artwork itself usually only changes when the track changes. Reuse the
+        // previously read bytes whenever the track identity (app + title + artist) hasn't moved -
+        // *except* we never trust a cached "no art" result (the source's thumbnail sometimes isn't
+        // ready yet the first time we read it, so a null must keep retrying rather than sticking
+        // forever) and we re-read once on the transition into Paused, since that's exactly when a
+        // source is prone to swapping in a different/updated thumbnail behind our back (e.g. a
+        // YouTube video's thumbnail settling after the initial frame). This is deliberately just the
+        // transition, not "whenever Paused": re-reading on every tick of an already-paused session
+        // would re-stamp its LastUpdated each time even when the bytes come back unchanged-but-not-
+        // byte-identical (a re-encoded video frame, say), letting a paused/inactive session's
+        // timestamp keep creeping forward and wrongly outrank the session actually in use.
+        var justPaused = status == PlaybackStatus.Paused && previous?.Status != PlaybackStatus.Paused;
+
         byte[]? art;
-        if (previous is not null
+        var canReuseCachedArt =
+            previous is not null
+            && previous.AlbumArt is not null
             && previous.SourceAppId == session.SourceAppUserModelId
             && previous.Title == title
-            && previous.Artist == artist)
+            && previous.Artist == artist
+            && !justPaused;
+
+        if (canReuseCachedArt)
         {
-            art = previous.AlbumArt;
+            art = previous!.AlbumArt;
         }
         else if (props?.Thumbnail is not null)
         {
@@ -298,15 +372,6 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
         {
             art = null;
         }
-
-        var status = playback.PlaybackStatus switch
-        {
-            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing => PlaybackStatus.Playing,
-            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused => PlaybackStatus.Paused,
-            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Stopped => PlaybackStatus.Stopped,
-            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Changing => PlaybackStatus.Changing,
-            _ => PlaybackStatus.Closed,
-        };
 
         var controls = playback.Controls;
 
@@ -323,7 +388,10 @@ public sealed class MediaSessionWatcher : IMediaSessionWatcher, IDisposable
             CanSeek: controls.IsPlaybackPositionEnabled,
             Position: timeline.Position,
             Duration: timeline.EndTime - timeline.StartTime,
-            LastUpdated: DateTimeOffset.UtcNow);
+            LastUpdated: DateTimeOffset.UtcNow,
+            IsVideo: isVideo,
+            PositionCapturedAt: timeline.LastUpdatedTime,
+            PlaybackRate: playback.PlaybackRate ?? 1.0);
     }
 
     public Task<bool> TogglePlayPauseAsync() => WithCurrentSessionAsync(s => s.TryTogglePlayPauseAsync());

@@ -6,7 +6,9 @@
         WindowStyle="None"
         ResizeMode="NoResize"
         Topmost="True"
-        Background="Black">
+        AllowsTransparency="True"
+        Background="Transparent"
+        Cursor="None">
     <Grid>
         <views:IdleView x:Name="Idle" Visibility="Visible" />
         <views:NowPlayingView x:Name="NowPlaying" Visibility="Collapsed" />

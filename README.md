@@ -44,22 +44,38 @@ OS state.
       correctly positioned, without needing an app restart.
 - [ ] Reboot the PC: app auto-launches, finds the touch monitor, and
       shows the correct view without any manual steps.
-- [ ] If your PC has more than one display at noticeably different DPI
-      scaling (e.g. a high-DPI primary next to the 100%-scale touch
-      monitor), confirm the kiosk window lands on the touch monitor and
-      not the primary display — see "Known limitations" below.
-
-## Known limitations
-
-- **Seek bar doesn't animate during playback.** It updates correctly on
-  track changes, pause/resume, and manual seeks, but doesn't creep forward
-  second-by-second while a track plays — most media sessions (Spotify
-  included) don't push per-second position updates over SMTC, and the
-  kiosk doesn't yet poll for one. Dragging the seek bar to jump to a
-  position still works normally.
-- **Window placement on unusual multi-monitor DPI setups.** The kiosk
-  reliably fills the touch monitor correctly-*sized* regardless of DPI
-  scaling, but on a specific arrangement — a very wide, heavily-scaled
-  primary display with the touch monitor placed to its right — the window
-  could in theory seed itself onto the wrong monitor before maximizing.
-  Not expected to affect a typical single-primary + touch-monitor setup.
+- [ ] If your PC has more than one display, confirm the kiosk window lands
+      on the smallest one (the touch monitor) and not the primary display,
+      both on a fresh launch and after a monitor unplug/replug.
+- [ ] Move the mouse cursor somewhere on another monitor, then tap a button
+      on the touchscreen: the cursor snaps back to that other monitor
+      shortly after release rather than staying on the touch monitor. Also
+      drag the seek/volume sliders with touch and confirm the drag itself
+      still tracks your finger normally before it snaps back on release.
+- [ ] Play a YouTube video: the kiosk background should blur that video's own
+      thumbnail instead of the seasonal glow. Switch to a Spotify track and
+      confirm it goes back to the seasonal glow.
+- [ ] Play a colorful Spotify/music track: the seek and volume bar fill
+      should tint to a color pulled from that track's album art instead of
+      plain green. Switch to a YouTube video: the bars should go back to
+      plain green rather than tinting off the video's thumbnail.
+- [ ] Pause right after switching tracks (before the vinyl art has clearly
+      loaded), then check the art is correct rather than stuck blank/stale -
+      pausing should force a fresh read of the artwork.
+- [ ] Skip to a new track and, if the title/art briefly look wrong right at
+      the switch, confirm they self-correct within a few seconds without you
+      doing anything - a one-time forced re-check runs ~3s after a track
+      becomes current specifically to catch that.
+- [ ] With a paused/idle YouTube tab sitting in the background (not actually
+      being watched) and Spotify playing or paused, confirm the kiosk keeps
+      showing Spotify's title/art and that Skip Next/Previous keeps
+      controlling Spotify - the idle video tab should not intermittently
+      hijack "current" just because it's sitting there.
+- [ ] Type into another window (e.g. Notepad) on another monitor, then tap
+      Pause on the touchscreen without clicking back into that window first:
+      keep typing - the keystrokes should still land in that window rather
+      than needing you to click back into it.
+- [ ] Watch the seek bar during normal playback (don't touch anything): the
+      thumb should creep forward smoothly second-by-second on its own,
+      matching real elapsed time, rather than sitting frozen until the next
+      track change/seek/pause.

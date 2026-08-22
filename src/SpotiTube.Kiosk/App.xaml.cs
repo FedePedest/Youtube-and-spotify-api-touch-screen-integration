@@ -78,7 +78,6 @@ public partial class App : System.Windows.Application
         if (screen is null) return;
 
         _window.PlaceOnDisplay(screen);
-        _window.Show();
     }
 
     private void InstallAutostartIfNeeded()
